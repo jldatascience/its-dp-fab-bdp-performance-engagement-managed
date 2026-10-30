@@ -1,0 +1,27 @@
+# PR-Validation.yml — its-dp-fab-item-framework-managed
+# Contrôles CI réels et bloquants sur chaque Pull Request vers develop, release/* ou main.
+# À déclarer comme « Required status check » dans la branch protection GitHub.
+# ── trigger — pas de declenchement direct
+trigger: none
+# ── pr — controles bloquants sur chaque PR (develop / release/* / main)
+pr:
+  branches:
+    include:
+      - develop
+      - release/*
+      - main
+
+# ── resources — socle commun (par TAG immuable)
+resources:
+  repositories:
+    - repository: cicd_common
+      type: github
+      # Service connection GitHub existante du projet Data Platform (nom à relever).
+      endpoint: __A_RELEVER__SERVICE_CONNECTION_GITHUB__
+      name: __A_RELEVER__ORG_GITHUB__/its-dp-fab-cicd-common
+      # Tag immuable du socle commun : toute évolution = nouveau tag + PR ici.
+      ref: refs/tags/v1.5.0
+
+# ── extends — etend le template de validation de PR du socle
+extends:
+  template: CICD/pipelines/templates/validate-pipeline.yml@cicd_common

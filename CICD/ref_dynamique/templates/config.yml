@@ -1,0 +1,45 @@
+# ###########################################################################
+# config.yml  —  DEPOT item-framework  —  SOLUTION TEMPORAIRE (EN DUR, DEV)
+#
+# EN UN CLIN D'OEIL
+#  - Ce fichier dit a fabric-cicd : OU deployer (quel workspace), QUOI deployer
+#    (quels types d'items), QUELS dossiers exclure, et ou trouver parameter.yml.
+#  - Preference retenue : on indique le GUID du workspace (workspace_id) avec
+#    le NOM en commentaire -> cible non ambigue + lisible.
+#    PERIMETRE : DEV uniquement.
+# ###########################################################################
+
+core:
+  workspace_id:
+    dev: "<<WS_FRAMEWORK_DEV>>"   # FR - DP - DEV - FAB - Framework - MANAGED
+    # itg/ppr/prd : a ajouter quand ces workspaces existeront (hors scope equipe Data)
+
+  # Relatif a ce fichier, une fois copie dans CICD/deployment/ : ../../fabric = dossier fabric/
+  # a la racine du depot (les items sont physiquement sous fabric/).
+  repository_directory: "../../fabric"
+
+  # Types d'items publies (un type absent ici est silencieusement ignore).
+  item_types_in_scope:
+    - VariableLibrary
+    - Notebook
+    - DataPipeline
+    - Environment
+
+  parameter: "parameter.yml"
+
+# Publication automatique des items par environnement (false = on publie).
+publish:
+  skip:
+    dev: false
+  # Exclut les dossiers hors perimetre (tests, versions depreciees).
+  folder_exclude_regex: "^/(Tests_|Flux/old|Log_processing/Old_processing|Log_sequence/Old_sequence)"
+
+# Depublication des items orphelins (true = on NE supprime pas).
+unpublish:
+  skip:
+    dev: true
+
+# Flags requis par folder_exclude_regex (fonctionnalite experimentale).
+features:
+  - enable_experimental_features
+  - enable_exclude_folder

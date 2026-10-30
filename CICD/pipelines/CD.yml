@@ -1,0 +1,74 @@
+# CD.yml — its-dp-fab-item-framework-managed
+# Remplace l'ancienne CD (ITG -> PPR -> PRD sans approbation, IDs en dur dans deploy.py).
+# Toute la logique est dans le template du socle commun (extends) : une seule
+# implémentation pour les 11 dépôts.
+#
+# Approbations PPR/PRD : Environments ADO fabric-ppr / fabric-prd (Approvals and checks).
+# Branches (v1.2) : develop → ITG, release/* → PPR, main → PRD ; toute autre branche est refusée.
+# Dépendance Framework : contrôlée à chaque stage (pré-vol Fabric + historique ADO).
+# ── trigger — pas de declenchement direct (le pipeline CI pousse l'artefact)
+trigger: none
+# ── pr — pas de declenchement sur Pull Request
+pr: none
+
+# ── resources — socle commun (par TAG immuable) + artefact du pipeline CI
+resources:
+  repositories:
+    - repository: cicd_common
+      type: github
+      # Service connection GitHub existante du projet Data Platform (nom à relever).
+      endpoint: __A_RELEVER__SERVICE_CONNECTION_GITHUB__
+      name: __A_RELEVER__ORG_GITHUB__/its-dp-fab-cicd-common
+      # Tag immuable du socle commun : toute évolution = nouveau tag + PR ici.
+      ref: refs/tags/v1.5.0
+  pipelines:
+    - pipeline: ci
+      # Nom EXACT du pipeline CI dans Azure DevOps (sensible à la casse à vérifier).
+      source: its-dp-fab-item-framework-managed-CI
+      # v1.2 : un run de CD par build CI ; l'environnement dépend de la branche source :
+      # develop → ITG, release/* → PPR, main → PRD (paramètre sourceBranches du template).
+      trigger:
+        branches:
+          include:
+            - develop
+            - release/*
+            - main
+
+# ── extends — etend le template CD du socle : toute la logique de deploiement y est
+extends:
+  template: CICD/pipelines/templates/cd-pipeline.yml@cicd_common
+  parameters:
+    repository: its-dp-fab-item-framework-managed
+    role: framework
+    # DEV : « skip » tant qu'aucune identité DEV n'existe dans le groupe de variables
+    # (décision D-02 : DEV relié à Git Integration et/ou déployé par fabric-cicd).
+    devMode: skip
+    lastEnvironment: PRD
+    # ---- Authentification et secrets (socle v1.4.0, décision du 22/10/2026) ---------------
+    # Service connections Azure DevOps (ARM) ≠ connexions Fabric (FABPIPELINES_*, MDS_*) :
+    # les premières authentifient le pipeline auprès d'Azure, les secondes sont utilisées
+    # par les items Fabric à l'exécution (ID en clair dans parameter.yml, jamais dans le coffre).
+    #
+    # Identité qui publie dans Fabric : SPN de l'environnement (authMode: secret). Ses 3 valeurs
+    # <ENV>-AZURE-CLIENT-ID / -CLIENT-SECRET / -TENANT-ID sont lues par AzureKeyVault@2, tâche du
+    # template imposé du socle (seuls les 3 secrets de l'environnement du stage sont lus).
+    authMode: secret
+    secretSource: keyVault
+    # Coffre UNIQUE pour ITG, PPR et PRD (pas de coffre par environnement).
+    keyVaultName: frfrkvdevdp0001
+    # UNE service connection Azure Resource Manager DISTINCTE par environnement, créée par Ops
+    # en fédération d'identité (Workload Identity Federation : aucun secret pour se connecter
+    # à Azure). Ce n'est PAS le nom du coffre. Tant qu'un marqueur est présent, le stage de
+    # cet environnement échoue à la compilation ; deux environnements ne peuvent pas partager
+    # la même service connection. RBAC « Key Vault Secrets User » de chacune limité aux
+    # 3 secrets <ENV>-AZURE-* de SON environnement.
+    # DEV : vide car devMode: skip (DEV est relié à Git, jamais déployé par la CD).
+    serviceConnections:
+      DEV: ""
+      ITG: __A_CONFIRMER_SERVICE_CONNECTION_ARM_ITG__
+      PPR: __A_CONFIRMER_SERVICE_CONNECTION_ARM_PPR__
+      PRD: __A_CONFIRMER_SERVICE_CONNECTION_ARM_PRD__
+    # Le groupe Fabric-CD-Secrets n'est plus référencé. Il reste utilisé par les ANCIENNES CD
+    # jusqu'à leur désactivation : ne pas le supprimer avant (backlog B33).
+    frameworkGate: ado
+    frameworkPipelineName: ""

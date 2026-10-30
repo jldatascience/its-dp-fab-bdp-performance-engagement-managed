@@ -1,0 +1,48 @@
+# CICD/deployment/dependencies.yml — its-dp-fab-item-framework-managed
+# Fichier propre à la chaîne KPMG (lu par le socle its-dp-fab-cicd-common, pas par fabric-cicd).
+# inventory_status: pending -> la CD refuse toute publication (code 3) tant que l'inventaire
+# des références n'a pas été revérifié sur la branche réelle (deploy.py validate sans erreur).
+# ── schema_version — version du format de ce fichier (lu par le socle, pas par fabric-cicd)
+schema_version: 1
+# ── repository — nom du depot decrit
+repository: its-dp-fab-item-framework-managed
+# v1.3 — category framework : aucune dépendance de déploiement (R1) ; les ADP et BDP
+#   vérifient sa disponibilité (pré-vol + porte ADO) sans exiger son redéploiement.
+# ── role — producer (framework) ou consumer (ADP/BDP/UCS)
+role: framework
+# ── category — framework | adp | bdp | ucs : pilote les regles de dependance v1.3
+category: framework
+# ── inventory_status — 'pending' BLOQUE la publication tant que l'inventaire n'est pas revalide
+inventory_status: pending
+# ── framework — prerequis Framework : workspaces + items attendus, par environnement + porte ADO
+framework:
+  required: false
+# upstreams (v1.1-v1.2) supprimé : interdit en v1.3 (DEPS_UPSTREAM_FORBIDDEN).
+# Dépendances de données / techniques / d'exécution : documentaires, jamais bloquantes (R6).
+# Format : - {repository: <dépôt>, kind: data|technical|execution, description: <texte>}
+# ── data_dependencies — dependances documentaires uniquement (jamais bloquantes, R6)
+data_dependencies: []
+# ── connections — connexions Fabric attendues (resolues par nom a l'execution)
+connections:
+- name:
+    _ALL_: DP-Fabric-Global-APR
+  purpose: connexion « Fabric Data Pipelines » des InvokePipeline (MODOP 0.5, D3) — nom exact à confirmer
+# ── variable_libraries — value set attendu actif, par environnement
+variable_libraries:
+- name: vl_core_config
+  expected_active_value_set:
+    DEV: DEV
+    ITG: ITG
+    PPR: PPR
+    PRD: PRD
+# ── intentionally_excluded_item_types — types volontairement hors perimetre
+intentionally_excluded_item_types: []
+# ── guid_policy — GUID interdits (sandbox) et GUID autorises (connexions communes)
+guid_policy:
+  forbidden_prefixes:
+  - 42463408-
+  - a699158a-
+  allowed:
+  - value: 727cf65b-
+    reason: connexion Fabric Data Pipelines commune aux 4 environnements (MODOP 0.5, décision D-03)
+  strict_unknown: false

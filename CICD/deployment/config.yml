@@ -1,0 +1,46 @@
+# CICD/deployment/config.yml — its-dp-fab-item-framework-managed
+# Format fabric-cicd 1.4.0 (deploy_with_config), validé hors ligne par la CI
+# (fabric_cicd._common._config_utils.load_config_file) pour les 4 environnements.
+# Workspaces désignés par leur NOM exact (aucun GUID). Clés en MAJUSCULES : elles
+# doivent être identiques à --env passé par la CD (comparaison sensible à la casse).
+# Noms PPR/PRD : hypothèse par analogie avec ITG (MODOP 0.2) — copier depuis le portail.
+# ── core — cible et perimetre du deploiement fabric-cicd (workspaces, types d'items)
+core:
+  workspace:
+    DEV: "FR - DP - DEV - FAB - Framework - MANAGED"
+    ITG: "FR - DP - ITG - FAB - Framework - MANAGED"
+    PPR: "FR - DP - PPR - FAB - Framework - MANAGED"
+    PRD: "FR - DP - PRD - FAB - Framework - MANAGED"
+  # Relatif à ce fichier (fabric-cicd 1.4.0 et fabcicd le résolvent depuis le dossier de
+  # config.yml) : CICD/deployment/ → ../../fabric = dossier fabric/ à la racine du dépôt.
+  repository_directory: "../../fabric"
+  # Un type absent de cette liste n'est pas publié, sans message : la CI vérifie la
+  # cohérence avec les items réellement présents (TYPES_SILENTLY_EXCLUDED).
+  item_types_in_scope:
+    - VariableLibrary
+    - Notebook
+    - DataPipeline
+    - Environment
+  parameter: "parameter.yml"
+# ── publish — publication automatique des items, par environnement (false = on publie)
+publish:
+  skip:
+    DEV: false
+    ITG: false
+    PPR: false
+    PRD: false
+  # Chemins de dossier relatifs, commençant par « / » ; exige les deux feature flags ci-dessous.
+  folder_exclude_regex: "^/(Tests_|Flux/old|Log_processing/Old_processing|Log_sequence/Old_sequence|To_delete)"
+# ── unpublish — suppression des items orphelins (true = on ne supprime pas)
+unpublish:
+  # Aucune suppression automatique d'items orphelins : DEV relié à Git Integration,
+  # environnements supérieurs = suppression manuelle validée (CI : CONFIG_UNPUBLISH_UPPER_ENV).
+  skip:
+    DEV: true
+    ITG: true
+    PPR: true
+    PRD: true
+# ── features — flags fabric-cicd requis (exclusion de dossiers, shortcuts...)
+features:
+  - enable_experimental_features
+  - enable_exclude_folder
