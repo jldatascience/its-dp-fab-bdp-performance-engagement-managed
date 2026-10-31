@@ -1,40 +1,41 @@
-# Python bytecode and caches
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-.Python
 
-# Python environments
+# Virtual environments
 .venv/
 venv/
 env/
 ENV/
 
-# Python build and package artifacts
+# Python build and test artifacts
 build/
 dist/
 *.egg-info/
-pip-wheel-metadata/
-
-# Test and type-checking caches
 .pytest_cache/
+.coverage
+htmlcov/
 .mypy_cache/
 .ruff_cache/
-.coverage
-.coverage.*
-htmlcov/
 
-# Jupyter local checkpoints
+# Jupyter
 .ipynb_checkpoints/
 
-# Local editor and operating-system files
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Editor and operating system files
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+Desktop.ini
 
 # --- Outillage référencement dynamique (CICD/ref_dynamique) : fichiers générés ---
-# __pycache__/ est déjà couvert plus haut (section Python bytecode and caches).
+# __pycache__/ est déjà couvert plus haut. On ignore ici les sorties des scripts.
 CICD/ref_dynamique/inventaire_*.json
 CICD/ref_dynamique/activites_*.csv
 CICD/ref_dynamique/toutes_refs_*.csv

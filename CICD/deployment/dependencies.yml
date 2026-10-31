@@ -1,48 +1,66 @@
-# CICD/deployment/dependencies.yml — its-dp-fab-item-framework-managed
+# CICD/deployment/dependencies.yml — its-dp-fab-bdp-performance-engagement-managed (BDP Performance Engagement)
 # Fichier propre à la chaîne KPMG (lu par le socle its-dp-fab-cicd-common, pas par fabric-cicd).
 # inventory_status: pending -> la CD refuse toute publication (code 3) tant que l'inventaire
 # des références n'a pas été revérifié sur la branche réelle (deploy.py validate sans erreur).
 # ── schema_version — version du format de ce fichier (lu par le socle, pas par fabric-cicd)
 schema_version: 1
 # ── repository — nom du depot decrit
-repository: its-dp-fab-item-framework-managed
-# v1.3 — category framework : aucune dépendance de déploiement (R1) ; les ADP et BDP
-#   vérifient sa disponibilité (pré-vol + porte ADO) sans exiger son redéploiement.
+repository: its-dp-fab-bdp-performance-engagement-managed
+# v1.3 — category bdp : le Framework est l'UNIQUE prérequis de déploiement (R1, R3) ;
+#   aucun ordre vis-à-vis des ADP ni des autres BDP, déploiement possible en parallèle (R4).
 # ── role — producer (framework) ou consumer (ADP/BDP/UCS)
-role: framework
+role: consumer
 # ── category — framework | adp | bdp | ucs : pilote les regles de dependance v1.3
-category: framework
+category: bdp
 # ── inventory_status — 'pending' BLOQUE la publication tant que l'inventaire n'est pas revalide
 inventory_status: pending
 # ── framework — prerequis Framework : workspaces + items attendus, par environnement + porte ADO
 framework:
-  required: false
-# upstreams (v1.1-v1.2) supprimé : interdit en v1.3 (DEPS_UPSTREAM_FORBIDDEN).
+  required: true
+  # Noms des workspaces Framework : config.yml du dépôt Framework (PPR/PRD confirmés le
+  # 22/10/2026, README Framework et MDS).
+  workspace:
+    DEV: FR - DP - DEV - FAB - Framework - MANAGED
+    ITG: FR - DP - ITG - FAB - Framework - MANAGED
+    PPR: FR - DP - PPR - FAB - Framework - MANAGED
+    PRD: FR - DP - PRD - FAB - Framework - MANAGED
+  # Items du Framework réellement appelés par Performance Engagement : inconnus tant que fabric/
+  # est vide (__A_RELEVER__ITEMS_FRAMEWORK_CONSOMMES__ ; proposés par 03_remplir.py).
+  # Format : - {type: DataPipeline, name: <nom>}. Liste vide = avertissement DEPS_FRAMEWORK_ITEMS
+  # (bloquant dès inventory_status: validated).
+  items: []
+  ado_gate:
+    # Remplacé à l'exécution par frameworkPipelineName de CD.yml (prioritaire) ; même marqueur.
+    pipeline_name: __A_RELEVER__PIPELINE_CD_FRAMEWORK__
+    # Branche des runs de la CD Framework examinés par la porte, par environnement (v1.2).
+    branch:
+      ITG: refs/heads/develop
+      PPR: refs/heads/release/*
+      PRD: refs/heads/main
+    stage_prefix: Deploy_
+# upstreams (v1.1-v1.2) : interdit en v1.3 (DEPS_UPSTREAM_FORBIDDEN).
 # Dépendances de données / techniques / d'exécution : documentaires, jamais bloquantes (R6).
 # Format : - {repository: <dépôt>, kind: data|technical|execution, description: <texte>}
+# Aucune dépendance confirmée au 31/10/2026 (__A_RELEVER__DATA_DEPENDENCIES_BDP__).
 # ── data_dependencies — dependances documentaires uniquement (jamais bloquantes, R6)
 data_dependencies: []
 # ── connections — connexions Fabric attendues (resolues par nom a l'execution)
-connections:
-- name:
-    _ALL_: DP-Fabric-Global-APR
-  purpose: connexion « Fabric Data Pipelines » des InvokePipeline (MODOP 0.5, D3) — nom exact à confirmer
+# À relever à l'inventaire (__A_RELEVER__CONNEXIONS_FABRIC_BDP__) : la connexion du Framework
+# (DP-Fabric-Global-APR) n'est reprise que si un item BDP l'utilise.
+# Format : - {name: {DEV: <nom>, ITG: …} ou {_ALL_: <nom>}, purpose: <texte>}
+connections: []
 # ── variable_libraries — value set attendu actif, par environnement
-variable_libraries:
-- name: vl_core_config
-  expected_active_value_set:
-    DEV: DEV
-    ITG: ITG
-    PPR: PPR
-    PRD: PRD
+# À relever à l'inventaire (__A_RELEVER__VARIABLE_LIBRARIES_BDP__).
+# Format : - {name: <nom>, expected_active_value_set: {DEV: DEV, ITG: ITG, PPR: PPR, PRD: PRD}}
+variable_libraries: []
 # ── intentionally_excluded_item_types — types volontairement hors perimetre
 intentionally_excluded_item_types: []
 # ── guid_policy — GUID interdits (sandbox) et GUID autorises (connexions communes)
+# À reconstruire à l'inventaire (__A_RELEVER__GUID_POLICY_BDP__) : préfixe du workspace sandbox
+# éventuel, connexions communes. Les GUID des workspaces BDP Performance Engagement ITG/PPR/PRD,
+# des capacités et des SPN de l'ancien deploy.py sont déjà interdits par le registre du socle
+# (CICD/registry/known_guids.yml).
 guid_policy:
-  forbidden_prefixes:
-  - 42463408-
-  - a699158a-
-  allowed:
-  - value: 727cf65b-
-    reason: connexion Fabric Data Pipelines commune aux 4 environnements (MODOP 0.5, décision D-03)
+  forbidden_prefixes: []
+  allowed: []
   strict_unknown: false

@@ -1,6 +1,13 @@
-# PR-Validation.yml — its-dp-fab-item-framework-managed
+# PR-Validation.yml — its-dp-fab-bdp-performance-engagement-managed (BDP Performance Engagement)
 # Contrôles CI réels et bloquants sur chaque Pull Request vers develop, release/* ou main.
 # À déclarer comme « Required status check » dans la branch protection GitHub.
+# Le template du socle (v1.5.0) n'exige aucun paramètre : cicdRoot = CICD (défaut) correspond
+# à l'arborescence de ce dépôt. Contrôles exécutés, sans accès au tenant ni secret :
+#   - yamllint de CICD/deployment et CICD/pipelines ;
+#   - deploy.py validate : structure, JSON des items, config.yml et parameter.yml (fabric-cicd),
+#     règles, GUID en dur, secrets, matrice de dépendances (category bdp : Framework seul prérequis, R1).
+# Les scripts Python de CICD/ref_dynamique/ ne sont pas contrôlés par ce template.
+# État au 31/10/2026 : fabric/ ne contient aucun item, le check sera rouge (attendu).
 # ── trigger — pas de declenchement direct
 trigger: none
 # ── pr — controles bloquants sur chaque PR (develop / release/* / main)

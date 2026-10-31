@@ -1,36 +1,42 @@
-# CICD/deployment/config.yml — its-dp-fab-item-framework-managed
+# CICD/deployment/config.yml — its-dp-fab-bdp-performance-engagement-managed (BDP Performance Engagement)
 # Format fabric-cicd 1.4.0 (deploy_with_config), validé hors ligne par la CI
 # (fabric_cicd._common._config_utils.load_config_file) pour les 4 environnements.
-# Workspaces désignés par leur NOM exact (aucun GUID). Clés en MAJUSCULES : elles
-# doivent être identiques à --env passé par la CD (comparaison sensible à la casse).
-# Noms PPR/PRD : hypothèse par analogie avec ITG (MODOP 0.2) — copier depuis le portail.
+# Workspaces désignés par leur NOM exact (aucun GUID : CONFIG_WORKSPACE_ID_FORBIDDEN). Clés en
+# MAJUSCULES : elles doivent être identiques à --env passé par la CD (sensible à la casse).
+# Noms DEV, ITG, PPR et PRD confirmés le 31/10/2026, avec le tiret simple « - » partout (le pré-vol
+# compare les noms caractère par caractère : un tiret long « – » ferait échouer la résolution).
+# DEV n'est jamais déployé par la CD (devMode: skip) : il est alimenté par Git Integration.
+# ÉTAT AU 31/10/2026 : CONFIGURATION NON DÉPLOYABLE. fabric/ ne contient aucun item
+# (aucun fichier .platform, seulement .gitkeep) : deploy.py validate s'arrête en code 4.
 # ── core — cible et perimetre du deploiement fabric-cicd (workspaces, types d'items)
 core:
   workspace:
-    DEV: "FR - DP - DEV - FAB - Framework - MANAGED"
-    ITG: "FR - DP - ITG - FAB - Framework - MANAGED"
-    PPR: "FR - DP - PPR - FAB - Framework - MANAGED"
-    PRD: "FR - DP - PRD - FAB - Framework - MANAGED"
+    DEV: "FR - DP - DEV - FAB - BDP - Performance Engagement - MANAGED"
+    ITG: "FR - DP - ITG - FAB - BDP - Performance Engagement - MANAGED"
+    PPR: "FR - DP - PPR - FAB - BDP - Performance Engagement - MANAGED"
+    PRD: "FR - DP - PRD - FAB - BDP - Performance Engagement - MANAGED"
   # Relatif à ce fichier (fabric-cicd 1.4.0 et fabcicd le résolvent depuis le dossier de
   # config.yml) : CICD/deployment/ → ../../fabric = dossier fabric/ à la racine du dépôt.
   repository_directory: "../../fabric"
   # Un type absent de cette liste n'est pas publié, sans message : la CI vérifie la
   # cohérence avec les items réellement présents (TYPES_SILENTLY_EXCLUDED).
-  item_types_in_scope:
-    - VariableLibrary
-    - Notebook
-    - DataPipeline
-    - Environment
-  parameter: "parameter.yml"
+  # VIDE tant qu'aucun item n'est présent : à remplir UNIQUEMENT avec les types relevés dans
+  # les fichiers .platform de fabric/ (01_inventaire_github.py, __A_RELEVER__ITEM_TYPES_BDP__).
+  # Liste vide = TYPES_SCOPE_EMPTY + CONFIG_FABRIC_CICD_INVALID (bloquant, voulu). Ne pas
+  # retirer la clé : absente, fabric-cicd publierait tous les types.
+  item_types_in_scope: []
+  # Clé « parameter » volontairement ABSENTE : parameter.yml ne contient encore aucune règle.
+  # L'ajouter (parameter: "parameter.yml") avec la première règle key_value_replace.
 # ── publish — publication automatique des items, par environnement (false = on publie)
 publish:
+  # Pas de folder_exclude_regex : aucun dossier à exclure n'existe dans fabric/.
+  # DEV reste à false : DEV n'est pas exclu ici mais par la CD (devMode: skip, aucun stage DEV).
+  # ITG, PPR, PRD doivent rester à false (CONFIG_PUBLISH_SKIPPED).
   skip:
     DEV: false
     ITG: false
     PPR: false
     PRD: false
-  # Chemins de dossier relatifs, commençant par « / » ; exige les deux feature flags ci-dessous.
-  folder_exclude_regex: "^/(Tests_|Flux/old|Log_processing/Old_processing|Log_sequence/Old_sequence|To_delete)"
 # ── unpublish — suppression des items orphelins (true = on ne supprime pas)
 unpublish:
   # Aucune suppression automatique d'items orphelins : DEV relié à Git Integration,
@@ -40,7 +46,4 @@ unpublish:
     ITG: true
     PPR: true
     PRD: true
-# ── features — flags fabric-cicd requis (exclusion de dossiers, shortcuts...)
-features:
-  - enable_experimental_features
-  - enable_exclude_folder
+# Pas de bloc features : aucun flag requis (pas d'exclusion de dossier, pas de shortcut relevé).

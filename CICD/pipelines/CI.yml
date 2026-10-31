@@ -1,9 +1,17 @@
-# CI.yml — its-dp-fab-item-framework-managed (pipeline Azure DevOps « its-dp-fab-item-framework-managed-CI »)
+# CI.yml — its-dp-fab-bdp-performance-engagement-managed (BDP Performance Engagement)
+# Pipeline Azure DevOps de CI (nom relevé dans l'ancienne CD BDP :
+# « its-dp-fab-bdp-performance-engagement-managed-ci », casse à confirmer dans ADO).
 # Template KPMG « Plateforme Technologique/CICD » CONSERVÉ : versioning, SonarQube,
-# publication de l'artefact « fabric » (consommé par CD.yml).
-# Changements : déclencheurs develop, release/* et main au lieu de la branche feature
-# (v1.2 : develop → ITG, release/* → PPR, main → PRD) ;
-# la validation de PR est portée par PR-Validation.yml (check GitHub obligatoire).
+# publication de l'artefact « fabric » (consommé par CD.yml, sous-dossier « binaries »).
+# Le socle its-dp-fab-cicd-common v1.5.0 ne fournit aucun template CI pour les dépôts
+# consommateurs (CICD/pipelines/ci-common.yml = CI du socle lui-même) : pas de remplacement.
+# Changements par rapport à l'ancienne CI BDP Performance Engagement :
+#   - déclencheurs develop, release/* et main au lieu de feature/its/1_fabric_item_synchronization
+#     (v1.2 : develop → ITG, release/* → PPR, main → PRD) ;
+#   - filtre de l'artefact aligné sur les autres dépôts : « !/*.json » (entre guillemets).
+#     L'ancien filtre « !**/*.json », non quoté, était lu par YAML comme une étiquette (tag) et,
+#     interprété comme motif, aurait exclu TOUS les JSON, dont pipeline-content.json des items.
+# La validation de PR est portée par PR-Validation.yml (check GitHub obligatoire).
 # À vérifier (V-01) : le filtre « contents: !/*.json » ne doit pas exclure les fichiers
 # d'items ; la CD échoue explicitement (STRUCT_NO_ITEMS) si l'artefact est incomplet.
 # ── trigger — branches qui declenchent le build (develop / release/* / main, v1.2)
@@ -38,8 +46,9 @@ extends:
       minor: 0
     build:
       sonarQube:
-        projectKey: Discovery_DP-FAB-Item-Framework-Managed
-        projectName: "[Discovery] DP FAB Item Framework Managed"
+        # Projet SonarQube BDP Performance Engagement (repris de l'ancienne CI BDP).
+        projectKey: Discovery_DP-FAB-BDP-Performance-Engagement-Managed
+        projectName: "[Discovery] DP FAB BDP Performance Engagement Managed"
         qualityGateName: "[Discovery] Starter"
       steps:
         - type: files

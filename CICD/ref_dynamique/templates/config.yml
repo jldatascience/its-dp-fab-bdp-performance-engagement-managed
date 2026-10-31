@@ -1,45 +1,39 @@
 # ###########################################################################
-# config.yml  —  DEPOT item-framework  —  SOLUTION TEMPORAIRE (EN DUR, DEV)
+# templates/config.yml  —  DÉPÔT its-dp-fab-bdp-performance-engagement-managed (BDP)
 #
-# EN UN CLIN D'OEIL
-#  - Ce fichier dit a fabric-cicd : OU deployer (quel workspace), QUOI deployer
-#    (quels types d'items), QUELS dossiers exclure, et ou trouver parameter.yml.
-#  - Preference retenue : on indique le GUID du workspace (workspace_id) avec
-#    le NOM en commentaire -> cible non ambigue + lisible.
-#    PERIMETRE : DEV uniquement.
+# MODÈLE de CICD/deployment/config.yml, rempli par 03_remplir.py.
+#  - Le rendu est écrit HORS du dépôt (dossier de sortie des scripts) ; il ne remplace
+#    jamais CICD/deployment/config.yml : la recopie se fait à la main, dans une PR revue.
+#  - Format imposé par le socle v1.5.0 : workspaces désignés par leur NOM exact
+#    (core.workspace, jamais workspace_id), clés DEV/ITG/PPR/PRD en MAJUSCULES.
+#
+# Marqueurs résolus par 03_remplir.py :
+#   <<WS_BDP_DEV>> … <<WS_BDP_PRD>> : nom du workspace BDP relevé par 02_fab_cli.py
+#                                     (fabric_<ENV>.json), sinon valeur de config.yml ;
+#   <<ITEM_TYPES_IN_SCOPE>>          : types des items relevés par 01_inventaire_github.py.
+# Un marqueur non résolu reste en place et est signalé.
 # ###########################################################################
-
 core:
-  workspace_id:
-    dev: "<<WS_FRAMEWORK_DEV>>"   # FR - DP - DEV - FAB - Framework - MANAGED
-    # itg/ppr/prd : a ajouter quand ces workspaces existeront (hors scope equipe Data)
-
-  # Relatif a ce fichier, une fois copie dans CICD/deployment/ : ../../fabric = dossier fabric/
-  # a la racine du depot (les items sont physiquement sous fabric/).
+  workspace:
+    DEV: "<<WS_BDP_DEV>>"
+    ITG: "<<WS_BDP_ITG>>"
+    PPR: "<<WS_BDP_PPR>>"
+    PRD: "<<WS_BDP_PRD>>"
+  # Relatif à CICD/deployment/ : ../../fabric = dossier fabric/ à la racine du dépôt.
   repository_directory: "../../fabric"
-
-  # Types d'items publies (un type absent ici est silencieusement ignore).
-  item_types_in_scope:
-    - VariableLibrary
-    - Notebook
-    - DataPipeline
-    - Environment
-
-  parameter: "parameter.yml"
-
-# Publication automatique des items par environnement (false = on publie).
+  # Types relevés dans les fichiers .platform de fabric/ (un type absent n'est pas publié).
+  item_types_in_scope: <<ITEM_TYPES_IN_SCOPE>>
+  # À décommenter avec la première règle de parameter.yml :
+  # parameter: "parameter.yml"
 publish:
   skip:
-    dev: false
-  # Exclut les dossiers hors perimetre (tests, versions depreciees).
-  folder_exclude_regex: "^/(Tests_|Flux/old|Log_processing/Old_processing|Log_sequence/Old_sequence)"
-
-# Depublication des items orphelins (true = on NE supprime pas).
+    DEV: false
+    ITG: false
+    PPR: false
+    PRD: false
 unpublish:
   skip:
-    dev: true
-
-# Flags requis par folder_exclude_regex (fonctionnalite experimentale).
-features:
-  - enable_experimental_features
-  - enable_exclude_folder
+    DEV: true
+    ITG: true
+    PPR: true
+    PRD: true

@@ -1,120 +1,285 @@
-"""Étape 2 — VALEURS via Fabric CLI (fab), MONO-REPO : 02_fab_cli.py lit ce qu’il y a dans Fabric DEV
+"""Étape 2 — INVENTAIRE FABRIC du workspace BDP Performance Engagement via Fabric CLI (lecture seule).
 
-Détecte si ce repo est framework ou mds (nom du dossier ../..) et relève :
-  - framework : le workspace Framework DEV + le GUID de chacun de ses items ;
-  - mds       : les DEUX workspaces (Framework + MDS) DEV + leurs items
-                (le parameter.yml du MDS référence des items du Framework).
-Plus, dans les deux cas : connexions + gateways, et les activités InvokePipeline /
-TridentNotebook lues dans le tenant (getDefinition) pour ce ou ces workspace(s).
+Pour UN environnement (--env, ITG par défaut) :
+  - vérifie l'authentification Fabric CLI (fab auth status) ;
+  - retrouve le workspace BDP par son nom EXACT (ou par son ID avec --workspace-id) ;
+  - relève ses items (type, nom, ID), les connexions et les gateways visibles ;
+  - relève aussi le workspace FRAMEWORK du même environnement et ses items (prérequis de
+    déploiement du BDP, R1 ; désactivable avec --sans-framework), pour identifier les items
+    Framework appelés par les pipelines BDP ;
+  - lit la définition des DataPipeline du BDP (getDefinition) et relève les activités
+    InvokePipeline / TridentNotebook, classées : workspace courant, framework, inter-workspace
+    (interdit au déploiement) ou cible inconnue.
 
-Pré-requis : pip install ms-fabric-cli  ;  fab auth login
-Sorties (À CÔTÉ du script) : guids_dev.json , connexions_gateways.json , activites_fabric_<repo>.csv
+Nom du workspace BDP, par ordre de priorité : --workspace, puis core.workspace.<ENV> de
+CICD/deployment/config.yml (ex. « FR - DP - ITG - FAB - BDP - Performance Engagement - MANAGED »).
+Nom du workspace Framework : framework.workspace.<ENV> de CICD/deployment/dependencies.yml.
+Aucun workspace MDS, ADP, UCS ou autre BDP n'est utilisé.
+Les ID des workspaces BDP ITG/PPR/PRD de l'ancienne CD figurent dans le registre du socle
+(CICD/registry/known_guids.yml) : --workspace-id permet d'en relever le nom exact.
+
+Pré-requis : pip install ms-fabric-cli ; fab auth login
+Sorties (HORS du dépôt, voir --out) : fabric_<ENV>.json, activites_fabric_<ENV>.csv
+Usage :
+    python 02_fab_cli.py                       # ITG (+ Framework ITG)
+    python 02_fab_cli.py --env DEV             # DEV, source des GUID des items (+ Framework DEV)
+    python 02_fab_cli.py --env PPR --workspace-id <id relevé dans le registre du socle>
+Aucune écriture dans Fabric : uniquement des GET et des getDefinition (POST en lecture).
 """
-import json, base64, csv, subprocess, sys, pathlib
+from __future__ import annotations
 
-BASE = pathlib.Path(__file__).resolve().parent
+import argparse
+import base64
+import csv
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
 
-# Noms EXACTS des workspaces DEV (copier depuis le portail, ponctuation sensible)
-WS_FRAMEWORK_DEV = "FR - DP - DEV - FAB - Framework - MANAGED"
-WS_ADP_MDS_DEV   = "FR - DP - DEV - FAB - ADP - MDS - MANAGED"
-REF_TYPES = {"InvokePipeline", "TridentNotebook"}
+REPO_NAME = "its-dp-fab-bdp-performance-engagement-managed"
+ENVIRONMENTS = ("DEV", "ITG", "PPR", "PRD")
+PLACEHOLDER_MARK = "__A_RELEVER__"
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent.parent
+CONFIG_FILE = REPO_ROOT / "CICD" / "deployment" / "config.yml"
+DEPENDENCIES_FILE = REPO_ROOT / "CICD" / "deployment" / "dependencies.yml"
+REF_TYPES = {"InvokePipeline": "pipelineId", "TridentNotebook": "notebookId"}
+NESTED_KEYS = ("activities", "ifTrueActivities", "ifFalseActivities", "defaultActivities")
 
-def detecter_label():
-    nom = (BASE / ".." / "..").resolve().name.lower()
-    if "item-framework" in nom or "framework" in nom: return "item-framework"
-    if "adp-mds" in nom or "mds" in nom: return "adp-mds"
-    # repli : si un inventaire existe déjà, s'en servir
-    invs = list(BASE.glob("inventaire_*.json"))
-    if invs: return invs[0].stem.replace("inventaire_", "")
-    sys.exit("Impossible de déduire framework/mds depuis le dossier parent. "
-             "Renomme le repo ou lance 01 d'abord.")
 
-def _run(args):
-    try: return subprocess.run(["fab", *args], capture_output=True,
-                               text=True, encoding="utf-8", errors="replace")
-    except FileNotFoundError: sys.exit("Fabric CLI introuvable. pip install ms-fabric-cli, puis `fab auth login`.")
+def dossier_sortie(arg: str | None) -> Path:
+    brut = arg or os.environ.get("REF_DYN_OUT") or str(Path(tempfile.gettempdir()) / "ref_dynamique" / REPO_NAME)
+    out = Path(brut).expanduser().resolve()
+    try:
+        out.relative_to(REPO_ROOT.resolve())
+    except ValueError:
+        out.mkdir(parents=True, exist_ok=True)
+        return out
+    sys.exit(f"Dossier de sortie {out} situé DANS le dépôt : refusé (choisir --out hors du dépôt).")
 
-def _body(stdout, ctx):
-    try: data = json.loads(stdout)
-    except json.JSONDecodeError: sys.exit(f"Sortie `fab api {ctx}` non JSON (adapter à ta version de fab) :\n{stdout[:400]}")
-    if isinstance(data, dict) and "text" in data and isinstance(data["text"], (dict, list)): data = data["text"]
+
+def nom_config(env: str) -> str | None:
+    """core.workspace.<ENV> de config.yml, sauf marqueur à relever."""
+    if not CONFIG_FILE.is_file():
+        return None
+    texte = CONFIG_FILE.read_text(encoding="utf-8")
+    try:
+        import yaml
+        valeur = (((yaml.safe_load(texte) or {}).get("core") or {}).get("workspace") or {}).get(env)
+    except ImportError:
+        m = re.search(rf'^\s+{env}:\s*"([^"]+)"', texte, re.M)
+        valeur = m.group(1) if m else None
+    return None if not valeur or PLACEHOLDER_MARK in str(valeur) else str(valeur)
+
+
+def nom_framework(env: str) -> str | None:
+    """framework.workspace.<ENV> de dependencies.yml (workspace Framework du même environnement)."""
+    if not DEPENDENCIES_FILE.is_file():
+        return None
+    texte = DEPENDENCIES_FILE.read_text(encoding="utf-8")
+    try:
+        import yaml
+        valeur = (((yaml.safe_load(texte) or {}).get("framework") or {}).get("workspace") or {}).get(env)
+    except ImportError:
+        m = re.search(rf"^\s+{env}:\s*(FR - DP - {env} - FAB - Framework[^\n]*)$", texte, re.M)
+        valeur = m.group(1).strip() if m else None
+    return None if not valeur or PLACEHOLDER_MARK in str(valeur) else str(valeur)
+
+
+# --------------------------------------------------------------------------- Fabric CLI
+def _run(args: list[str]) -> subprocess.CompletedProcess:
+    try:
+        return subprocess.run(["fab", *args], capture_output=True, text=True, encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        sys.exit("Fabric CLI introuvable : pip install ms-fabric-cli, puis `fab auth login`.")
+
+
+def verifier_auth() -> None:
+    r = _run(["auth", "status"])
+    if r.returncode != 0:
+        sys.exit(f"Fabric CLI non authentifiée (`fab auth status` : {(r.stderr or r.stdout).strip()[:300]}). "
+                 "Lancer `fab auth login`.")
+
+
+def _body(stdout: str, ctx: str):
+    try:
+        data = json.loads(stdout)
+    except json.JSONDecodeError:
+        sys.exit(f"Sortie `fab api {ctx}` non JSON (adapter à la version de fab) :\n{stdout[:400]}")
+    if isinstance(data, dict) and isinstance(data.get("text"), (dict, list)):
+        data = data["text"]
     return data
 
-def fab_get(endpoint):
+
+def fab_get(endpoint: str):
     r = _run(["api", "-X", "get", endpoint])
-    if r.returncode != 0: sys.exit(f"Echec `fab api get {endpoint}` : {r.stderr.strip() or r.stdout.strip()}")
-    d = _body(r.stdout, endpoint); return d.get("value", d) if isinstance(d, dict) else d
+    if r.returncode != 0:
+        raise RuntimeError(f"`fab api get {endpoint}` : {(r.stderr or r.stdout).strip()[:300]}")
+    d = _body(r.stdout, endpoint)
+    return d.get("value", d) if isinstance(d, dict) else d
 
-def fab_post(endpoint):
-    r = _run(["api", "-X", "post", endpoint]); return (r.returncode, _body(r.stdout, endpoint) if r.stdout.strip() else {})
 
-def find_ws(nom):
-    for ws in fab_get("workspaces"):
-        if ws.get("displayName", "").strip() == nom.strip(): return ws["id"]
-    sys.exit(f"Workspace introuvable (nom exact ? droits ?) : {nom!r}")
+def fab_post(endpoint: str):
+    r = _run(["api", "-X", "post", endpoint])
+    return r.returncode, (_body(r.stdout, endpoint) if r.stdout.strip() else {})
 
-def items(ws_id): return fab_get(f"workspaces/{ws_id}/items")
-def items_map(its): return {f'{it["type"]}/{it["displayName"]}': it["id"] for it in its}
 
-def walk(acts, pipeline, out):
+# --------------------------------------------------------------------------- inventaire
+def parcourir(acts, pipeline: str, chemin: str, out: list[dict]) -> None:
     for a in acts or []:
-        tp = a.get("typeProperties", {}) or {}
+        if not isinstance(a, dict):
+            continue
+        tp = a.get("typeProperties") or {}
+        filtre = f'{chemin}[?(@.name=="{a.get("name")}")]'
         if a.get("type") in REF_TYPES:
-            conn = None
-            for v in (tp.get("externalReferences") or {}).values(): conn = v if isinstance(v, str) else conn
-            out.append({"pipeline": pipeline, "activite": a.get("name"), "type": a.get("type"),
-                        "workspaceId": tp.get("workspaceId"), "pipelineId": tp.get("pipelineId"),
-                        "notebookId": tp.get("notebookId"), "connection": conn})
-        for key in ("activities", "ifTrueActivities", "ifFalseActivities", "defaultActivities"):
-            if isinstance(tp.get(key), list): walk(tp[key], pipeline, out)
-        for case in (tp.get("cases") or []):
-            if isinstance(case, dict): walk(case.get("activities"), pipeline, out)
+            prop = REF_TYPES[a["type"]]
+            connexion = None
+            for v in (a.get("externalReferences") or tp.get("externalReferences") or {}).values():
+                connexion = v if isinstance(v, str) else connexion
+            out.append({"pipeline": pipeline, "activite": a.get("name"), "type": a.get("type"), "chemin": filtre,
+                        "workspaceId": tp.get("workspaceId"), "propriete_cible": prop, "cibleId": tp.get(prop),
+                        "connexion": connexion})
+        for key in NESTED_KEYS:
+            if isinstance(tp.get(key), list):
+                parcourir(tp[key], pipeline, f"{filtre}.typeProperties.{key}", out)
+        for i, case in enumerate(tp.get("cases") or []):
+            if isinstance(case, dict):
+                parcourir(case.get("activities"), pipeline, f"{filtre}.typeProperties.cases[{i}].activities", out)
 
-def activites(ws_id, its):
-    out = []
-    for it in its:
-        if it.get("type") != "DataPipeline": continue
-        code, body = fab_post(f"workspaces/{ws_id}/items/{it['id']}/getDefinition")
+
+def activites(ws_id: str, items: list[dict]) -> tuple[list[dict], list[str]]:
+    out, indisponibles = [], []
+    for it in items:
+        if it.get("type") != "DataPipeline":
+            continue
+        _, body = fab_post(f"workspaces/{ws_id}/items/{it['id']}/getDefinition")
         parts = ((body or {}).get("definition") or {}).get("parts") or []
         if not parts:
-            print(f"   (def. indisponible pour {it['displayName']} — getDefinition async/202 ? à vérifier)"); continue
-        for p in parts:
-            if p.get("path", "").endswith("pipeline-content.json"):
-                try: doc = json.loads(base64.b64decode(p["payload"]).decode("utf-8"))
-                except Exception: continue
-                walk((doc.get("properties") or {}).get("activities"), it["displayName"], out)
-    return out
+            indisponibles.append(it["displayName"])  # 202 (opération longue) ou droits insuffisants
+            continue
+        for part in parts:
+            if part.get("path", "").endswith("pipeline-content.json"):
+                try:
+                    doc = json.loads(base64.b64decode(part["payload"]).decode("utf-8"))
+                except (ValueError, KeyError):
+                    continue
+                parcourir((doc.get("properties") or {}).get("activities"), it["displayName"],
+                          "$.properties.activities", out)
+    return out, indisponibles
 
-label = detecter_label()
-fw_id = find_ws(WS_FRAMEWORK_DEV); fw_items = items(fw_id)
-workspaces = {"WS_FRAMEWORK_DEV": fw_id}
-guids = {"workspaces": workspaces, "framework_items": items_map(fw_items), "mds_items": {}}
-scopes = [("item-framework", fw_id, fw_items)]   # pipelines framework à lire dans le tenant
 
-if label == "adp-mds":
-    mds_id = find_ws(WS_ADP_MDS_DEV); mds_items = items(mds_id)
-    workspaces["WS_ADP_MDS_DEV"] = mds_id
-    guids["mds_items"] = items_map(mds_items)
-    scopes.append(("adp-mds", mds_id, mds_items))
-    print(f"[mds] workspaces relevés : Framework + MDS")
-else:
-    print(f"[framework] workspace relevé : Framework uniquement")
+def main() -> None:
+    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    p.add_argument("--env", default="ITG", choices=ENVIRONMENTS, help="environnement inventorié (défaut : ITG)")
+    p.add_argument("--workspace", help="nom exact du workspace (prioritaire sur config.yml)")
+    p.add_argument("--workspace-id", help="ID du workspace : le nom est relevé dans Fabric")
+    p.add_argument("--out", help="dossier de sortie hors dépôt (défaut : dossier temporaire système)")
+    p.add_argument("--sans-definitions", action="store_true", help="ne pas lire les définitions des pipelines")
+    p.add_argument("--sans-framework", action="store_true", help="ne pas relever le workspace Framework")
+    args = p.parse_args()
 
-json.dump(guids, open(BASE / "guids_dev.json", "w"), indent=2, ensure_ascii=False)
+    out = dossier_sortie(args.out)
+    verifier_auth()
+    try:
+        tous = fab_get("workspaces")
+    except RuntimeError as exc:
+        sys.exit(str(exc))
+    noms_ws = {w.get("id"): w.get("displayName") for w in tous}
 
-try: conns = [{"id": c.get("id"), "displayName": c.get("displayName"), "connectivityType": c.get("connectivityType")} for c in fab_get("connections")]
-except SystemExit: conns = []
-try: gws = [{"id": g.get("id"), "displayName": g.get("displayName"), "type": g.get("type")} for g in fab_get("gateways")]
-except SystemExit: gws = []
-json.dump({"connections": conns, "gateways": gws}, open(BASE / "connexions_gateways.json", "w"), indent=2, ensure_ascii=False)
+    if args.workspace_id:
+        ws_id = args.workspace_id
+        if ws_id not in noms_ws:
+            sys.exit(f"Workspace {ws_id} absent de la liste visible par ce compte (ID ? droits ?).")
+        ws_nom = noms_ws[ws_id]
+    else:
+        ws_nom = args.workspace or nom_config(args.env)
+        if not ws_nom:
+            sys.exit(f"{args.env} : nom du workspace BDP inconnu (marqueur __A_RELEVER__ dans config.yml). "
+                     "Passer --workspace \"<nom exact>\" ou --workspace-id <id>.")
+        ws_id = next((i for i, n in noms_ws.items() if (n or "").strip() == ws_nom.strip()), None)
+        if not ws_id:
+            sys.exit(f"Workspace introuvable (nom exact ? droits ?) : {ws_nom!r}")
+    if "BDP - PERFORMANCE ENGAGEMENT" not in (ws_nom or "").upper():
+        print(f"ATTENTION : « {ws_nom} » ne ressemble pas à un workspace BDP Performance Engagement.", file=sys.stderr)
 
-for lbl, ws_id, its in scopes:
-    acts = activites(ws_id, its)
-    with open(BASE / f"activites_fabric_{lbl}.csv", "w", newline="", encoding="utf-8") as fh:
+    try:
+        items = fab_get(f"workspaces/{ws_id}/items")
+    except RuntimeError as exc:
+        sys.exit(str(exc))
+    try:
+        conns = [{"id": c.get("id"), "displayName": c.get("displayName"),
+                  "connectivityType": c.get("connectivityType")} for c in fab_get("connections")]
+    except RuntimeError as exc:
+        print(f"   connexions non lues : {exc}", file=sys.stderr)
+        conns = []
+    try:
+        gws = [{"id": g.get("id"), "displayName": g.get("displayName"), "type": g.get("type")}
+               for g in fab_get("gateways")]
+    except RuntimeError as exc:
+        print(f"   gateways non lues : {exc}", file=sys.stderr)
+        gws = []
+
+    framework = None
+    if not args.sans_framework:
+        fw_nom = nom_framework(args.env)
+        fw_id = next((i for i, n in noms_ws.items() if fw_nom and (n or "").strip() == fw_nom.strip()), None)
+        if not fw_id:
+            print(f"   workspace Framework {args.env} introuvable ({fw_nom!r}) : références Framework non identifiées.",
+                  file=sys.stderr)
+        else:
+            try:
+                fw_items = fab_get(f"workspaces/{fw_id}/items")
+            except RuntimeError as exc:
+                print(f"   items Framework non lus : {exc}", file=sys.stderr)
+                fw_items = []
+            framework = {"workspace": {"nom": fw_nom, "id": fw_id},
+                         "items": [{"type": it.get("type"), "nom": it.get("displayName"), "id": it.get("id")}
+                                   for it in fw_items]}
+
+    acts, indispo = ([], []) if args.sans_definitions else activites(ws_id, items)
+    ids_items = {it["id"] for it in items}
+    fw_ws_id = (framework or {}).get("workspace", {}).get("id")
+    for a in acts:
+        wsr = a.get("workspaceId")
+        if wsr and fw_ws_id and wsr == fw_ws_id:
+            a["portee"], a["workspace_cible"] = "framework", framework["workspace"]["nom"]
+        elif wsr and wsr != ws_id:
+            a["portee"], a["workspace_cible"] = "inter-workspace", noms_ws.get(wsr, "")
+        else:
+            a["portee"] = "workspace courant" if a.get("cibleId") in ids_items else "cible inconnue"
+            a["workspace_cible"] = ws_nom
+
+    env = args.env
+    (out / f"fabric_{env}.json").write_text(json.dumps({
+        "depot": REPO_NAME, "env": env,
+        "workspace": {"nom": ws_nom, "id": ws_id},
+        "items": [{"type": it.get("type"), "nom": it.get("displayName"), "id": it.get("id")} for it in items],
+        "framework": framework,
+        "connexions": conns, "gateways": gws,
+        "definitions_indisponibles": indispo,
+    }, indent=2, ensure_ascii=False), encoding="utf-8")
+    with open(out / f"activites_fabric_{env}.csv", "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh, delimiter=";")
-        w.writerow(["pipeline","activite","type","workspaceId","pipelineId","notebookId","connection"])
-        for a in acts: w.writerow([a["pipeline"],a["activite"],a["type"],a["workspaceId"],a["pipelineId"],a["notebookId"],a["connection"]])
-    print(f"   {lbl}: {len(its)} items | {len(acts)} activités InvokePipeline/Notebook (tenant) -> activites_fabric_{lbl}.csv")
+        cols = ["pipeline", "activite", "type", "chemin", "workspaceId", "workspace_cible", "portee",
+                "propriete_cible", "cibleId", "connexion"]
+        w.writerow(cols)
+        for a in acts:
+            w.writerow([a.get(c) for c in cols])
 
-print(f"Framework DEV = {fw_id} | connexions={len(conns)} gateways={len(gws)}")
-print("-> guids_dev.json , connexions_gateways.json , activites_fabric_*.csv")
+    croisees = sum(1 for a in acts if a["portee"] == "inter-workspace")
+    vers_fw = sum(1 for a in acts if a["portee"] == "framework")
+    print(f"[{env}] {ws_nom} = {ws_id} | {len(items)} items | {len(acts)} activités ({vers_fw} vers le Framework, "
+          f"{croisees} inter-workspace interdites) | connexions={len(conns)} gateways={len(gws)}")
+    if framework:
+        print(f"   Framework {env} : {framework['workspace']['nom']} = {framework['workspace']['id']} "
+              f"| {len(framework['items'])} items")
+    if indispo:
+        print(f"   définition indisponible pour {len(indispo)} pipeline(s) (getDefinition 202/droits) : {', '.join(indispo)}")
+    print(f"   -> {out}")
+
+
+if __name__ == "__main__":
+    main()
