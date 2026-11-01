@@ -62,7 +62,6 @@ dans le `CHANGELOG.md` de `its-dp-fab-cicd-common`, versionné par tag `vX.Y.Z`.
 
 ### À confirmer
 
-- Tiret simple « - » avant « MANAGED » dans le nom ITG (saisi une fois avec un tiret long « – »).
 - Organisation et service connection GitHub ; noms des 3 service connections ARM ITG, PPR et PRD (création prévue).
 - Casse exacte du pipeline CI dans Azure DevOps ; nom exact de la CD Framework.
 - Types d'items, règles, `framework.items`, connexions Fabric, Variable Libraries, `guid_policy` et
